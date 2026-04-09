@@ -218,8 +218,7 @@ public abstract class AbstractRetryJobProcessor<T extends RetryPayload, D extend
     }
 
     private boolean shouldPersistDetailJob(D detailJob) {
-        return detailJob != null
-                && (detailJob.getId() != null || detailJob.getExecutionStatus() == RetryExecutionStatus.ERROR);
+        return detailJob != null;
     }
 
     private T readPayload(RetryJob retryJob) {
