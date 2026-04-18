@@ -19,6 +19,10 @@ import jakarta.persistence.Table;
 @Table(name = "retry_jobs")
 public class RetryJob extends TimestampedEntity {
 
+    private static final String SEND_EMAIL_PENDING_MESSAGE = "Pendiente de ejecutar el paso de envio de correo";
+    private static final String UPDATE_RETRY_JOB_PENDING_MESSAGE =
+            "Pendiente de ejecutar el paso de actualizacion del retry job";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -211,9 +215,9 @@ public class RetryJob extends TimestampedEntity {
         this.dataStatus = RetryExecutionStatus.PENDING;
         this.dataMessage = null;
         this.sendEmailStatus = RetryExecutionStatus.PENDING;
-        this.sendEmailMessage = null;
+        this.sendEmailMessage = SEND_EMAIL_PENDING_MESSAGE;
         this.updateRetryJobsStatus = RetryExecutionStatus.PENDING;
-        this.updateRetryJobsMessage = null;
+        this.updateRetryJobsMessage = UPDATE_RETRY_JOB_PENDING_MESSAGE;
     }
 
     public boolean isStepSuccessful(RetryStepName stepName) {

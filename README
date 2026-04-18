@@ -1,53 +1,26 @@
-** Limpiamos cada servicio
-./mvnw clean package -DskipTests
+Listar los topics disponibles en Kafka:
+docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 
+Listar los topics relacionados con retry:
+docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list | grep retry
 
-
-** Reinciamos docker por si acaso
-docker compose down
-docker compose up --build -d
-
-
-
-** Verificación en Docker
-docker exec microservices-pagos-service-1 sh -lc 'jar tf /app.jar | grep PaymentRetryPublisher'
-ESPERADO = BOOT-INF/classes/com/example/pagos_service/messaging/PaymentRetryPublisher.class
-
-
+Listar los mensajes del topic payments_retry_jobs:
+docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic payments_retry_jobs --from-beginning
 
 ** Provocamos fallo
 docker compose stop mongodb
 
 
-
 ** Lanzamos pago
 curl -i -X POST http://localhost:8080/pagos/procesar \
   -H 'Content-Type: application/json' \
-  -d '{"ordenId":"ord-retry-002","monto":199.99,"estado":"pendiente"}'
+  -d '{"ordenId":"ord-retry-011","monto":210,"estado":"pendiente"}'
 
 
-
-** Revisamos logs del prodictor y del broker en Docker
-docker compose logs --tail=200 pagos-service | grep -E "Publishing payment retry job|Payment retry message published"
-
-docker compose logs --tail=200 broker-message-be | grep -E "Payment retry message consumed|Retry job failed|Retry job processed successfully"
-
-
-
-** Revisamos Postgres en Docker, para validar que haya un error
-docker exec broker-postgres psql -U broker -d broker_message -c "select id, job_type, status, data_status, send_email_status, update_retry_jobs_status, last_error, reference_id from retry_jobs order by id desc limit 10;"
-
+** Tabla de ver si hay alguno en fallo
 docker exec broker-postgres psql -U broker -d broker_message -c "select id, retry_job_id, reference_id, orden_id, monto, pago_estado, execution_status, error_message from payments_retry_jobs order by id desc limit 10;"
-
 
 
 ** Levantamos Mongo
 docker compose start mongodb
 sleep 15
-
-
-
-** Revisamos logs de nuevo en Docker
-docker compose logs --tail=200 broker-message-be | grep -E "Payment retry message consumed|Retry job failed|Retry job processed successfully"
-
-docker exec broker-postgres psql -U broker -d broker_message -c "select id, job_type, status, data_status, send_email_status, update_retry_jobs_status, last_error, reference_id from retry_jobs order by id desc limit 10;"
