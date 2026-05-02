@@ -13,6 +13,7 @@ import com.example.broker_message_be.dto.OrderRetryPayload;
 @Component
 public class OrderRetryTargetClient implements RetryTargetClient<OrderRetryPayload> {
 
+    private static final String RETRY_REQUEST_HEADER = "X-Broker-Retry";
     private final RestClient restClient;
 
     public OrderRetryTargetClient(RestClient.Builder restClientBuilder, BrokerProperties properties) {
@@ -30,6 +31,7 @@ public class OrderRetryTargetClient implements RetryTargetClient<OrderRetryPaylo
 
         restClient.post()
                 .uri("")
+                .header(RETRY_REQUEST_HEADER, "true")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
                 .retrieve()

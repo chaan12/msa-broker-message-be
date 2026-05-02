@@ -50,6 +50,7 @@ import com.example.broker_message_be.repository.OrderRetryJobRepository;
 import com.example.broker_message_be.repository.PaymentRetryJobRepository;
 import com.example.broker_message_be.repository.ProductRetryJobRepository;
 import com.example.broker_message_be.repository.RetryJobRepository;
+import com.example.broker_message_be.service.PaymentRetryJobProcessor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -77,7 +78,9 @@ import jakarta.mail.internet.MimeMessage;
         "spring.mail.host=test-smtp.local",
         "spring.mail.port=2525",
         "spring.mail.username=chanxortiz@gmail.com",
-        "spring.mail.password=naepebyxvyecevsp"
+        "spring.mail.password=naepebyxvyecevsp",
+        "broker.retry.delay-ms=1",
+        "broker.retry.max-attempts=5"
 })
 @Import(BrokerRetryFlowIntegrationTest.TestConfig.class)
 @EmbeddedKafka(partitions = 1, topics = {"payments_retry_jobs", "order_retry_jobs", "product_retry_jobs"})
@@ -119,6 +122,9 @@ class BrokerRetryFlowIntegrationTest {
 
     @Autowired
     private CapturingMailSender capturingMailSender;
+
+    @Autowired
+    private PaymentRetryJobProcessor paymentRetryJobProcessor;
 
     @BeforeEach
     void setUp() {
@@ -214,8 +220,15 @@ class BrokerRetryFlowIntegrationTest {
                 {
                   "data": {
                     "id": "prod-retry-001",
-                    "nombre": "Teclado Mecanico",
-                    "precio": 89.99
+                    "name": "Teclado Mecanico",
+                    "description": "Teclado mecanico compacto",
+                    "price": 89.99,
+                    "quantity": 25,
+                    "image": "https://cdn.example.com/products/teclado.jpg",
+                    "category": "Electronica",
+                    "subcategory": "Perifericos",
+                    "brand": "KeyMax",
+                    "supplier": "Distribuidora Central SA"
                   }
                 }
                 """);
@@ -228,10 +241,57 @@ class BrokerRetryFlowIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals(RetryExecutionStatus.ERROR, retryJob.getSendEmailStatus());
         org.junit.jupiter.api.Assertions.assertEquals(RetryExecutionStatus.PENDING, retryJob.getUpdateRetryJobsStatus());
         org.junit.jupiter.api.Assertions.assertEquals(RetryExecutionStatus.ERROR, productRetryJob.getExecutionStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("Teclado Mecanico", productRetryJob.getNombre());
+        org.junit.jupiter.api.Assertions.assertEquals("Teclado mecanico compacto", productRetryJob.getDescription());
+        org.junit.jupiter.api.Assertions.assertEquals(25, productRetryJob.getQuantity());
+        org.junit.jupiter.api.Assertions.assertEquals("KeyMax", productRetryJob.getBrand());
         org.junit.jupiter.api.Assertions.assertEquals(2, capturingMailSender.sendAttempts());
         org.junit.jupiter.api.Assertions.assertEquals(1, capturingMailSender.sentMessages().size());
         org.junit.jupiter.api.Assertions.assertEquals("Producto fallido", capturingMailSender.sentMessages().get(0).getSubject());
         org.junit.jupiter.api.Assertions.assertTrue(RETRY_TARGET_SERVER.lastProductRequest().contains("\"nombre\":\"Teclado Mecanico\""));
+        org.junit.jupiter.api.Assertions.assertTrue(RETRY_TARGET_SERVER.lastProductRequest().contains("\"precio\":89.99"));
+    }
+
+    @Test
+    void shouldStopRetryingAfterFiveFailedAttempts() throws Exception {
+        RETRY_TARGET_SERVER.paymentStatus(500);
+        RETRY_TARGET_SERVER.paymentResponseBody("{\"message\":\"pago fallido\"}");
+
+        sendMessage("payments_retry_jobs", """
+                {
+                  "data": {
+                    "id": "pay-retry-max-001",
+                    "ordenId": "ord-max-001",
+                    "monto": 210.00,
+                    "estado": "procesado"
+                  }
+                }
+                """);
+
+        RetryJob retryJob = awaitRetryJob(RetryJobType.PAYMENT, RetryExecutionStatus.ERROR);
+        RetryJob exhaustedJob = await(Duration.ofSeconds(10), () -> {
+            paymentRetryJobProcessor.processPendingJobs();
+            RetryJob currentJob = retryJobRepository.findById(retryJob.getId()).orElse(null);
+            if (currentJob != null && currentJob.getRetryCount() >= 5) {
+                return currentJob;
+            }
+            return null;
+        });
+
+        int attemptsAtLimit = RETRY_TARGET_SERVER.paymentRequestCount();
+        org.junit.jupiter.api.Assertions.assertEquals(5, exhaustedJob.getRetryCount());
+        org.junit.jupiter.api.Assertions.assertEquals(RetryExecutionStatus.ERROR, exhaustedJob.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(5, attemptsAtLimit);
+        org.junit.jupiter.api.Assertions.assertTrue(exhaustedJob.getLastError().contains("Se agotaron los 5 intentos"));
+
+        RETRY_TARGET_SERVER.paymentStatus(201);
+        paymentRetryJobProcessor.processPendingJobs();
+
+        RetryJob afterLimitJob = retryJobRepository.findById(retryJob.getId())
+                .orElseThrow(() -> new AssertionError("Retry job no encontrado"));
+        org.junit.jupiter.api.Assertions.assertEquals(RetryExecutionStatus.ERROR, afterLimitJob.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(5, afterLimitJob.getRetryCount());
+        org.junit.jupiter.api.Assertions.assertEquals(attemptsAtLimit, RETRY_TARGET_SERVER.paymentRequestCount());
     }
 
     private void sendMessage(String topic, String payload) {
@@ -403,6 +463,9 @@ class BrokerRetryFlowIntegrationTest {
         private final AtomicReference<String> lastPaymentRequest = new AtomicReference<>();
         private final AtomicReference<String> lastOrderRequest = new AtomicReference<>();
         private final AtomicReference<String> lastProductRequest = new AtomicReference<>();
+        private final AtomicInteger paymentRequestCount = new AtomicInteger();
+        private final AtomicInteger orderRequestCount = new AtomicInteger();
+        private final AtomicInteger productRequestCount = new AtomicInteger();
 
         private HttpServer httpServer;
 
@@ -413,11 +476,14 @@ class BrokerRetryFlowIntegrationTest {
                 throw new IllegalStateException("No se pudo iniciar el servidor HTTP de prueba", exception);
             }
             httpServer.createContext("/pagos/procesar",
-                    exchange -> handle(exchange, paymentStatus, paymentResponseBody, lastPaymentRequest));
+                    exchange -> handle(exchange, paymentStatus, paymentResponseBody, lastPaymentRequest,
+                            paymentRequestCount));
             httpServer.createContext("/ordenes",
-                    exchange -> handle(exchange, orderStatus, orderResponseBody, lastOrderRequest));
+                    exchange -> handle(exchange, orderStatus, orderResponseBody, lastOrderRequest,
+                            orderRequestCount));
             httpServer.createContext("/productos",
-                    exchange -> handle(exchange, productStatus, productResponseBody, lastProductRequest));
+                    exchange -> handle(exchange, productStatus, productResponseBody, lastProductRequest,
+                            productRequestCount));
             httpServer.start();
         }
 
@@ -437,6 +503,17 @@ class BrokerRetryFlowIntegrationTest {
             lastPaymentRequest.set(null);
             lastOrderRequest.set(null);
             lastProductRequest.set(null);
+            paymentRequestCount.set(0);
+            orderRequestCount.set(0);
+            productRequestCount.set(0);
+        }
+
+        void paymentStatus(int status) {
+            paymentStatus.set(status);
+        }
+
+        void paymentResponseBody(String body) {
+            paymentResponseBody.set(body);
         }
 
         void orderStatus(int status) {
@@ -459,12 +536,17 @@ class BrokerRetryFlowIntegrationTest {
             return Objects.requireNonNull(lastProductRequest.get(), "No se recibio request de producto en el stub");
         }
 
+        int paymentRequestCount() {
+            return paymentRequestCount.get();
+        }
+
         String url(String path) {
             return "http://localhost:" + httpServer.getAddress().getPort() + path;
         }
 
         private void handle(HttpExchange exchange, AtomicInteger status, AtomicReference<String> responseBody,
-                AtomicReference<String> lastRequest) throws IOException {
+                AtomicReference<String> lastRequest, AtomicInteger requestCount) throws IOException {
+            requestCount.incrementAndGet();
             lastRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = responseBody.get().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");

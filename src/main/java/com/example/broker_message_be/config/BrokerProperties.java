@@ -48,6 +48,7 @@ public class BrokerProperties {
 
         private long delayMs = 10000L;
         private int batchSize = 25;
+        private int maxAttempts = 5;
 
         public long getDelayMs() {
             return delayMs;
@@ -64,6 +65,14 @@ public class BrokerProperties {
         public void setBatchSize(int batchSize) {
             this.batchSize = batchSize;
         }
+
+        public int getMaxAttempts() {
+            return maxAttempts;
+        }
+
+        public void setMaxAttempts(int maxAttempts) {
+            this.maxAttempts = maxAttempts;
+        }
     }
 
     public static class Topics {
@@ -71,6 +80,9 @@ public class BrokerProperties {
         private String payments = "payments_retry_jobs";
         private String orders = "order_retry_jobs";
         private String products = "product_retry_jobs";
+        private String paymentReceived = "payment_received_events";
+        private String inventoryUpdates = "inventory_update_events";
+        private String orderStatusChanged = "order_status_changed_events";
         private int partitions = 1;
         private short replicas = 1;
 
@@ -96,6 +108,30 @@ public class BrokerProperties {
 
         public void setProducts(String products) {
             this.products = products;
+        }
+
+        public String getPaymentReceived() {
+            return paymentReceived;
+        }
+
+        public void setPaymentReceived(String paymentReceived) {
+            this.paymentReceived = paymentReceived;
+        }
+
+        public String getInventoryUpdates() {
+            return inventoryUpdates;
+        }
+
+        public void setInventoryUpdates(String inventoryUpdates) {
+            this.inventoryUpdates = inventoryUpdates;
+        }
+
+        public String getOrderStatusChanged() {
+            return orderStatusChanged;
+        }
+
+        public void setOrderStatusChanged(String orderStatusChanged) {
+            this.orderStatusChanged = orderStatusChanged;
         }
 
         public int getPartitions() {

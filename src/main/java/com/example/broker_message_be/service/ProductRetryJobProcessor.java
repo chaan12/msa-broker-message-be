@@ -52,6 +52,9 @@ public class ProductRetryJobProcessor extends AbstractRetryJobProcessor<ProductR
         if (payload.getPrecio() == null || payload.getPrecio().signum() < 0) {
             throw new IllegalArgumentException("El precio del producto no puede ser negativo");
         }
+        if (payload.getQuantity() != null && payload.getQuantity() < 0) {
+            throw new IllegalArgumentException("La cantidad del producto no puede ser negativa");
+        }
     }
 
     @Override
@@ -59,7 +62,14 @@ public class ProductRetryJobProcessor extends AbstractRetryJobProcessor<ProductR
         ProductRetryJob detailJob = new ProductRetryJob();
         detailJob.setReferenceId(payload.getId());
         detailJob.setNombre(payload.getNombre().trim());
+        detailJob.setDescription(payload.getDescription());
         detailJob.setPrecio(payload.getPrecio());
+        detailJob.setQuantity(payload.getQuantity());
+        detailJob.setImage(payload.getImage());
+        detailJob.setCategory(payload.getCategory());
+        detailJob.setSubcategory(payload.getSubcategory());
+        detailJob.setBrand(payload.getBrand());
+        detailJob.setSupplier(payload.getSupplier());
         detailJob.setExecutionStatus(RetryExecutionStatus.PENDING);
         return detailJob;
     }

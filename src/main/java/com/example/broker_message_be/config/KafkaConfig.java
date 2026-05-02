@@ -17,17 +17,21 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.FixedBackOff;
 
 @Configuration
 @ConditionalOnProperty(name = "broker.kafka.enabled", havingValue = "true", matchIfMissing = true)
 public class KafkaConfig {
 
     @Bean
-    KafkaAdmin kafkaAdmin(@Value("${spring.kafka.bootstrap-servers}") String bootstrapServers) {
+    KafkaAdmin kafkaAdmin(@Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
+            @Value("${spring.kafka.admin.auto-create:true}") boolean autoCreate) {
         Map<String, Object> configs = new HashMap<>();
         configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         KafkaAdmin kafkaAdmin = new KafkaAdmin(configs);
         kafkaAdmin.setFatalIfBrokerNotAvailable(false);
+        kafkaAdmin.setAutoCreate(autoCreate);
         return kafkaAdmin;
     }
 
@@ -49,12 +53,21 @@ public class KafkaConfig {
 
     @Bean(name = "kafkaListenerContainerFactory")
     ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
-            ConsumerFactory<String, String> consumerFactory) {
+            ConsumerFactory<String, String> consumerFactory,
+            DefaultErrorHandler kafkaErrorHandler) {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.setCommonErrorHandler(kafkaErrorHandler);
         return factory;
+    }
+
+    @Bean
+    DefaultErrorHandler kafkaErrorHandler(
+            @Value("${spring.kafka.listener.retry-interval-ms:1000}") long retryIntervalMs,
+            @Value("${spring.kafka.listener.retry-max-attempts:3}") long maxAttempts) {
+        return new DefaultErrorHandler(new FixedBackOff(retryIntervalMs, maxAttempts));
     }
 
     @Bean
@@ -76,6 +89,30 @@ public class KafkaConfig {
     @Bean
     NewTopic productsRetryJobsTopic(BrokerProperties properties) {
         return TopicBuilder.name(properties.getTopics().getProducts())
+                .partitions(properties.getTopics().getPartitions())
+                .replicas(properties.getTopics().getReplicas())
+                .build();
+    }
+
+    @Bean
+    NewTopic paymentReceivedEventsTopic(BrokerProperties properties) {
+        return TopicBuilder.name(properties.getTopics().getPaymentReceived())
+                .partitions(properties.getTopics().getPartitions())
+                .replicas(properties.getTopics().getReplicas())
+                .build();
+    }
+
+    @Bean
+    NewTopic inventoryUpdateEventsTopic(BrokerProperties properties) {
+        return TopicBuilder.name(properties.getTopics().getInventoryUpdates())
+                .partitions(properties.getTopics().getPartitions())
+                .replicas(properties.getTopics().getReplicas())
+                .build();
+    }
+
+    @Bean
+    NewTopic orderStatusChangedEventsTopic(BrokerProperties properties) {
+        return TopicBuilder.name(properties.getTopics().getOrderStatusChanged())
                 .partitions(properties.getTopics().getPartitions())
                 .replicas(properties.getTopics().getReplicas())
                 .build();

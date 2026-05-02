@@ -16,9 +16,10 @@ public interface RetryJobRepository extends JpaRepository<RetryJob, Long> {
 
     Optional<RetryJob> findByJobKey(String jobKey);
 
-    List<RetryJob> findByJobTypeAndStatusInAndNextRetryAtLessThanEqualOrderByCreatedAtAsc(
+    List<RetryJob> findByJobTypeAndStatusInAndNextRetryAtLessThanEqualAndRetryCountLessThanOrderByCreatedAtAsc(
             RetryJobType jobType,
             Collection<RetryExecutionStatus> statuses,
             LocalDateTime nextRetryAt,
+            int retryCount,
             Pageable pageable);
 }

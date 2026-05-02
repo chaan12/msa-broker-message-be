@@ -96,10 +96,11 @@ public abstract class AbstractRetryJobProcessor<T extends RetryPayload, D extend
     @Override
     public void processPendingJobs() {
         List<RetryJob> pendingJobs = retryJobRepository
-                .findByJobTypeAndStatusInAndNextRetryAtLessThanEqualOrderByCreatedAtAsc(
+                .findByJobTypeAndStatusInAndNextRetryAtLessThanEqualAndRetryCountLessThanOrderByCreatedAtAsc(
                         getJobType(),
                         List.of(RetryExecutionStatus.PENDING, RetryExecutionStatus.ERROR),
                         LocalDateTime.now(),
+                        properties.getRetry().getMaxAttempts(),
                         PageRequest.of(0, properties.getRetry().getBatchSize()));
 
         for (RetryJob retryJob : pendingJobs) {
@@ -111,6 +112,11 @@ public abstract class AbstractRetryJobProcessor<T extends RetryPayload, D extend
         RetryJob retryJob = retryJobRepository.findById(retryJobId)
                 .orElseThrow(() -> new IllegalStateException("Retry job no encontrado: " + retryJobId));
         if (retryJob.getStatus() == RetryExecutionStatus.SUCCESS) {
+            return;
+        }
+        if (!retryJob.canAttempt(properties.getRetry().getMaxAttempts())) {
+            logger.warn("Retry job reached max attempts. jobType={}, retryJobId={}, retryCount={}, maxAttempts={}",
+                    getJobType(), retryJobId, retryJob.getRetryCount(), properties.getRetry().getMaxAttempts());
             return;
         }
 
@@ -148,6 +154,10 @@ public abstract class AbstractRetryJobProcessor<T extends RetryPayload, D extend
         String errorMessage = sanitizeMessage(exception);
         retryJob.markStepFailure(failureStep, errorMessage,
                 LocalDateTime.now().plusNanos(properties.getRetry().getDelayMs() * 1_000_000L));
+        if (!retryJob.canAttempt(properties.getRetry().getMaxAttempts())) {
+            retryJob.setLastError(errorMessage + ". Se agotaron los "
+                    + properties.getRetry().getMaxAttempts() + " intentos configurados");
+        }
         detailJob.markError(errorMessage);
         persistState(retryJob, detailJob);
         sendFailureNotification(retryJob, errorMessage);

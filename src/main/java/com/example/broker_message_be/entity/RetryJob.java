@@ -158,6 +158,10 @@ public class RetryJob extends TimestampedEntity {
         return retryCount;
     }
 
+    public boolean canAttempt(int maxAttempts) {
+        return retryCount < maxAttempts;
+    }
+
     public String getLastError() {
         return lastError;
     }
@@ -241,10 +245,9 @@ public class RetryJob extends TimestampedEntity {
             case UPDATE_RETRY_JOBS -> {
                 updateRetryJobsStatus = RetryExecutionStatus.SUCCESS;
                 updateRetryJobsMessage = message;
-                status = RetryExecutionStatus.SUCCESS;
-                lastError = null;
             }
         }
+        markJobSuccessIfAllStepsSuccessful();
     }
 
     public void markStepFailure(RetryStepName stepName, String message, LocalDateTime nextRetryTime) {
@@ -266,5 +269,14 @@ public class RetryJob extends TimestampedEntity {
         lastError = message;
         nextRetryAt = nextRetryTime;
         retryCount++;
+    }
+
+    private void markJobSuccessIfAllStepsSuccessful() {
+        if (dataStatus == RetryExecutionStatus.SUCCESS
+                && sendEmailStatus == RetryExecutionStatus.SUCCESS
+                && updateRetryJobsStatus == RetryExecutionStatus.SUCCESS) {
+            status = RetryExecutionStatus.SUCCESS;
+            lastError = null;
+        }
     }
 }
