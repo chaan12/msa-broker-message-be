@@ -3,6 +3,7 @@ package com.example.broker_message_be.service;
 import java.util.List;
 
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +37,11 @@ public class EnvioService {
         envio.setUsuarioId(hasText(usuarioId) ? usuarioId.trim() : null);
         envio.setNotificationEmail(resolveRecipient(notificationEmail));
         envioRepository.save(envio);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Envio> listRecent() {
+        return envioRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     @Transactional

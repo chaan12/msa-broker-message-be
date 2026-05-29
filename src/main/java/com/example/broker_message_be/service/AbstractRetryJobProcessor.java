@@ -25,7 +25,6 @@ import com.example.broker_message_be.dto.RetryPayload;
 import com.example.broker_message_be.entity.BaseRetryDetailJob;
 import com.example.broker_message_be.entity.RetryJob;
 import com.example.broker_message_be.enumtype.RetryExecutionStatus;
-import com.example.broker_message_be.enumtype.RetryJobType;
 import com.example.broker_message_be.enumtype.RetryStepName;
 import com.example.broker_message_be.gateway.RetryTargetClient;
 import com.example.broker_message_be.repository.RetryJobRepository;

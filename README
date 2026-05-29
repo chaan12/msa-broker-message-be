@@ -1,11 +1,11 @@
 Listar los topics disponibles en Kafka:
-docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 
 Listar los topics relacionados con retry:
-docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list | grep retry
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list | grep retry
 
 Listar los mensajes del topic payments_retry_jobs:
-docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic payments_retry_jobs --from-beginning
+docker exec -it kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic payments_retry_jobs --from-beginning
 
 ** Provocamos fallo
 docker compose stop mongodb
